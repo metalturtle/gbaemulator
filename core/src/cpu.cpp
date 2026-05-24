@@ -6,6 +6,13 @@ namespace gba {
 
 namespace {
 
+u32 readRegisterForOperand(const std::array<u32, 16>& regs, int index, u32 instruction_pc) {
+  if (index == 15) {
+    return instruction_pc + 8;
+  }
+  return regs.at(index);
+}
+
 bool conditionPassed(u32 instruction, u32 cpsr) {
   const u32 condition = instruction >> 28;
   const bool n = (cpsr & (1u << 31)) != 0;
@@ -103,6 +110,84 @@ u32 Cpu::stepArm(Bus& bus) {
     }
     regs_[15] = pc + 8 + signExtendBranchOffset(instruction);
     return 3;
+  }
+
+  if ((instruction & 0x0ffffff0u) == 0x012fff10u) {
+    const int rm = static_cast<int>(instruction & 0x0f);
+    const u32 target = regs_.at(rm);
+    if ((target & 1u) != 0) {
+      cpsr_ |= kThumbBit;
+    } else {
+      cpsr_ &= ~kThumbBit;
+    }
+    regs_[15] = target & ~1u;
+    return 3;
+  }
+
+  if ((instruction & 0x0fbffff0u) == 0x0129f000u) {
+    const int rm = static_cast<int>(instruction & 0x0f);
+    cpsr_ = (cpsr_ & ~0xffu) | (regs_.at(rm) & 0xffu);
+    return 1;
+  }
+
+  if ((instruction & 0x0c000000u) == 0x04000000u) {
+    const bool immediate_offset = (instruction & (1u << 25)) == 0;
+    const bool pre_index = (instruction & (1u << 24)) != 0;
+    const bool add_offset = (instruction & (1u << 23)) != 0;
+    const bool byte_transfer = (instruction & (1u << 22)) != 0;
+    const bool write_back = (instruction & (1u << 21)) != 0;
+    const bool load = (instruction & (1u << 20)) != 0;
+    const int rn = static_cast<int>((instruction >> 16) & 0x0f);
+    const int rd = static_cast<int>((instruction >> 12) & 0x0f);
+
+    if (!immediate_offset || byte_transfer) {
+      return 1;
+    }
+
+    const u32 base = readRegisterForOperand(regs_, rn, pc);
+    const u32 offset = instruction & 0x0fffu;
+    const u32 effective = pre_index ? (add_offset ? base + offset : base - offset) : base;
+
+    if (load) {
+      regs_.at(rd) = bus.read32(effective);
+    } else {
+      const u32 value = readRegisterForOperand(regs_, rd, pc);
+      bus.write32(effective, value);
+    }
+
+    if (write_back || !pre_index) {
+      regs_.at(rn) = add_offset ? base + offset : base - offset;
+    }
+    return 3;
+  }
+
+  if ((instruction & 0x0c000000u) == 0x00000000u) {
+    const bool immediate = (instruction & (1u << 25)) != 0;
+    const u32 opcode = (instruction >> 21) & 0x0f;
+    const int rn = static_cast<int>((instruction >> 16) & 0x0f);
+    const int rd = static_cast<int>((instruction >> 12) & 0x0f);
+
+    if (immediate) {
+      const u32 rotate = ((instruction >> 8) & 0x0f) * 2;
+      const u32 imm8 = instruction & 0xffu;
+      const u32 operand2 = rotate == 0 ? imm8 : ((imm8 >> rotate) | (imm8 << (32 - rotate)));
+
+      if (opcode == 0x4) {
+        regs_.at(rd) = readRegisterForOperand(regs_, rn, pc) + operand2;
+        return 1;
+      }
+      if (opcode == 0xd) {
+        regs_.at(rd) = operand2;
+        return 1;
+      }
+    } else {
+      const int rm = static_cast<int>(instruction & 0x0f);
+      const bool no_shift = (instruction & 0x00000ff0u) == 0;
+      if (opcode == 0xd && no_shift) {
+        regs_.at(rd) = readRegisterForOperand(regs_, rm, pc);
+        return 1;
+      }
+    }
   }
 
   return 1;

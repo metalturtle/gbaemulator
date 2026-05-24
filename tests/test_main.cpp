@@ -1,4 +1,5 @@
 #include <fstream>
+#include <sstream>
 #include <iostream>
 #include <span>
 #include <stdexcept>
@@ -29,7 +30,10 @@ struct TestFailure : std::runtime_error {
     const auto lhs_value = (lhs);                                                          \
     const auto rhs_value = (rhs);                                                          \
     if (!(lhs_value == rhs_value)) {                                                       \
-      throw TestFailure(std::string("EXPECT_EQ failed: ") + #lhs + " != " + #rhs);      \
+      std::ostringstream message;                                                          \
+      message << "EXPECT_EQ failed: " << #lhs << " != " << #rhs << " (" << lhs_value    \
+              << " vs " << rhs_value << ")";                                             \
+      throw TestFailure(message.str());                                                     \
     }                                                                                      \
   } while (false)
 
@@ -129,6 +133,21 @@ void testPokemonEntryBranch() {
   EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08000204));
 }
 
+void testPokemonStartupReachesThumbEntry() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 32 && !emulator.cpu().thumb(); ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_TRUE(emulator.cpu().thumb());
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x080003a4));
+  EXPECT_EQ(emulator.cpu().reg(14), static_cast<u32>(0x08000234));
+  EXPECT_EQ(emulator.bus().read32(0x03007ffc), static_cast<u32>(0x08000248));
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -165,6 +184,7 @@ int main() {
       {"reset and frame progress", testResetAndFrameProgress},
       {"ARM branch execution", testArmBranchExecution},
       {"Pokemon entry branch", testPokemonEntryBranch},
+      {"Pokemon startup reaches Thumb entry", testPokemonStartupReachesThumbEntry},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };
