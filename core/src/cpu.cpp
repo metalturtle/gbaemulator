@@ -112,7 +112,7 @@ void Cpu::reset() {
 
 u32 Cpu::step(Bus& bus) {
   if (irq_line_ && (cpsr_ & kIrqDisableBit) == 0) {
-    enterIrq();
+    enterIrq(bus);
     return 3;
   }
 
@@ -121,12 +121,16 @@ u32 Cpu::step(Bus& bus) {
   return cycles;
 }
 
-void Cpu::enterIrq() {
-  // Banked registers and SPSR are not implemented yet. This is enough to expose
-  // the control-flow event for early integration tests.
+void Cpu::enterIrq(Bus& bus) {
+  // Without a real BIOS, dispatch through the BIOS IRQ handler pointer that
+  // commercial games install at 0x03007FFC.
+  const u32 handler = bus.read32(0x03007ffcu);
+  regs_[14] = regs_[15] + (thumb() ? 2 : 4);
   cpsr_ = static_cast<u32>(CpuMode::Irq) | kIrqDisableBit;
-  regs_[14] = regs_[15] + 4;
-  regs_[15] = 0x00000018;
+  if ((handler & 1u) != 0) {
+    cpsr_ |= kThumbBit;
+  }
+  regs_[15] = handler == 0 ? 0x00000018u : (handler & ~1u);
   irq_line_ = false;
 }
 

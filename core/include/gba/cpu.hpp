@@ -38,7 +38,7 @@ class Cpu {
   static constexpr u32 kThumbBit = 1u << 5;
   static constexpr u32 kIrqDisableBit = 1u << 7;
 
-  void enterIrq();
+  void enterIrq(Bus& bus);
   u32 stepArm(Bus& bus);
   u32 stepThumb(Bus& bus);
 

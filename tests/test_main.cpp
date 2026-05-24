@@ -375,6 +375,25 @@ void testPokemonStartupRunsSixThousandInstructions() {
   EXPECT_TRUE(emulator.cpu().thumb());
 }
 
+void testPokemonIrqDispatchesThroughBiosHleVector() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 32 && !emulator.cpu().thumb(); ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.bus().read32(0x03007ffc), static_cast<u32>(0x08000248));
+  emulator.cpu().requestIrq();
+  const u32 cycles = emulator.cpu().step(emulator.bus());
+
+  EXPECT_EQ(cycles, static_cast<u32>(3));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08000248));
+  EXPECT_TRUE(!emulator.cpu().thumb());
+  EXPECT_EQ(static_cast<u32>(emulator.cpu().mode()), static_cast<u32>(gba::CpuMode::Irq));
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -427,6 +446,7 @@ int main() {
       {"Pokemon startup stack adjust", testPokemonStartupStackAdjust},
       {"Pokemon startup SP-relative store", testPokemonStartupSpRelativeStore},
       {"Pokemon startup runs 6000 instructions", testPokemonStartupRunsSixThousandInstructions},
+      {"Pokemon IRQ dispatches through BIOS HLE vector", testPokemonIrqDispatchesThroughBiosHleVector},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };
