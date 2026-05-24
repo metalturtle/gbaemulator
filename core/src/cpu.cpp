@@ -74,6 +74,28 @@ void setNz(u32& cpsr, u32 value) {
   }
 }
 
+void setAddFlags(u32& cpsr, u32 lhs, u32 rhs, u32 result) {
+  setNz(cpsr, result);
+  cpsr &= ~((1u << 29) | (1u << 28));
+  if (static_cast<u64>(lhs) + static_cast<u64>(rhs) > 0xffffffffull) {
+    cpsr |= 1u << 29;
+  }
+  if (((~(lhs ^ rhs) & (lhs ^ result)) & 0x80000000u) != 0) {
+    cpsr |= 1u << 28;
+  }
+}
+
+void setSubFlags(u32& cpsr, u32 lhs, u32 rhs, u32 result) {
+  setNz(cpsr, result);
+  cpsr &= ~((1u << 29) | (1u << 28));
+  if (lhs >= rhs) {
+    cpsr |= 1u << 29;
+  }
+  if ((((lhs ^ rhs) & (lhs ^ result)) & 0x80000000u) != 0) {
+    cpsr |= 1u << 28;
+  }
+}
+
 }  // namespace
 
 void Cpu::reset() {
@@ -272,17 +294,19 @@ u32 Cpu::stepThumb(Bus& bus) {
     const u32 imm = instruction & 0xffu;
 
     if (op == 0x1) {
-      setNz(cpsr_, regs_[rd] - imm);
+      setSubFlags(cpsr_, regs_[rd], imm, regs_[rd] - imm);
       return 1;
     }
     if (op == 0x2) {
+      const u32 lhs = regs_[rd];
       regs_[rd] += imm;
-      setNz(cpsr_, regs_[rd]);
+      setAddFlags(cpsr_, lhs, imm, regs_[rd]);
       return 1;
     }
     if (op == 0x3) {
+      const u32 lhs = regs_[rd];
       regs_[rd] -= imm;
-      setNz(cpsr_, regs_[rd]);
+      setSubFlags(cpsr_, lhs, imm, regs_[rd]);
       return 1;
     }
 
@@ -378,13 +402,13 @@ u32 Cpu::stepThumb(Bus& bus) {
       case 0x9:
         result = 0 - rhs;
         regs_[rd] = result;
-        setNz(cpsr_, result);
+        setSubFlags(cpsr_, 0, rhs, result);
         return 1;
       case 0xa:
-        setNz(cpsr_, lhs - rhs);
+        setSubFlags(cpsr_, lhs, rhs, lhs - rhs);
         return 1;
       case 0xb:
-        setNz(cpsr_, lhs + rhs);
+        setAddFlags(cpsr_, lhs, rhs, lhs + rhs);
         return 1;
       case 0xc:
         result = lhs | rhs;
@@ -414,6 +438,19 @@ u32 Cpu::stepThumb(Bus& bus) {
   if ((instruction & 0xff00u) == 0xdf00u) {
     last_swi_ = instruction & 0xffu;
     return 3;
+  }
+
+  if ((instruction & 0xf000u) == 0xd000u && (instruction & 0x0f00u) != 0x0f00u) {
+    const u32 condition = (instruction >> 8) & 0x0f;
+    if (conditionPassed(condition << 28, cpsr_)) {
+      u32 offset = (instruction & 0xffu) << 1;
+      if ((offset & 0x100u) != 0) {
+        offset |= 0xfffffe00u;
+      }
+      regs_[15] = pc + 4 + offset;
+      return 3;
+    }
+    return 1;
   }
 
   if ((instruction & 0xf800u) == 0xf000u) {
