@@ -29,6 +29,7 @@ class Emulator {
 
   [[nodiscard]] const Cartridge& cartridge() const { return cartridge_; }
   [[nodiscard]] const Cpu& cpu() const { return cpu_; }
+  [[nodiscard]] Cpu& cpu() { return cpu_; }
   [[nodiscard]] const Ppu& ppu() const { return ppu_; }
   [[nodiscard]] const Interrupts& interrupts() const { return interrupts_; }
   [[nodiscard]] const Keypad& keypad() const { return keypad_; }

@@ -105,6 +105,30 @@ void testResetAndFrameProgress() {
   EXPECT_TRUE((emulator.interrupts().flag() & gba::Interrupts::VBlank) != 0);
 }
 
+void testArmBranchExecution() {
+  auto rom = makeSyntheticRom();
+  // B +0x10 from 0x08000000. ARM branch target is PC+8+offset.
+  rom[0] = 0x04;
+  rom[1] = 0x00;
+  rom[2] = 0x00;
+  rom[3] = 0xea;
+
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+  const u32 cycles = emulator.cpu().step(emulator.bus());
+  EXPECT_EQ(cycles, static_cast<u32>(3));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08000018));
+}
+
+void testPokemonEntryBranch() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+  const u32 cycles = emulator.cpu().step(emulator.bus());
+  EXPECT_EQ(cycles, static_cast<u32>(3));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08000204));
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -139,6 +163,8 @@ int main() {
       {"cartridge header", testCartridgeHeader},
       {"bus memory map", testBusMemoryMap},
       {"reset and frame progress", testResetAndFrameProgress},
+      {"ARM branch execution", testArmBranchExecution},
+      {"Pokemon entry branch", testPokemonEntryBranch},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };
