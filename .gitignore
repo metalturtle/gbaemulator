@@ -1,0 +1,17 @@
+build/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.wasm
+*.js.map
+
+# ROMs and saves should stay local.
+*.gba
+*.gb
+*.gbc
+*.sav
+*.srm
+*.eep
+*.fla
