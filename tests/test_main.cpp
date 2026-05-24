@@ -291,6 +291,90 @@ void testPokemonStartupHalfwordIoClear() {
   EXPECT_EQ(emulator.bus().read16(0x030022d8), static_cast<u16>(0));
 }
 
+void testPokemonStartupMultipleLoadStore() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1500 && emulator.cpu().reg(15) != 0x08000692; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08000692));
+  EXPECT_EQ(emulator.cpu().reg(0), static_cast<u32>(0x08000845));
+  EXPECT_EQ(emulator.cpu().reg(3), static_cast<u32>(0x082e954c));
+}
+
+void testPokemonStartupImmediateShift() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1800 && emulator.cpu().reg(15) != 0x08001262; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x08001262));
+  EXPECT_EQ(emulator.cpu().reg(0), static_cast<u32>(1));
+}
+
+void testPokemonStartupUnconditionalBranch() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 2000 && emulator.cpu().reg(15) != 0x080011de; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x080011de));
+}
+
+void testPokemonStartupStackAdjust() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 2400 && emulator.cpu().reg(15) != 0x082e04e0; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x082e04e0));
+  EXPECT_EQ(emulator.cpu().reg(13), static_cast<u32>(0x03007e08));
+}
+
+void testPokemonStartupSpRelativeStore() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 2600 && emulator.cpu().reg(15) != 0x082e0556; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x082e0556));
+  EXPECT_EQ(emulator.bus().read32(0x03007e08), static_cast<u32>(0));
+}
+
+void testPokemonStartupRunsSixThousandInstructions() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 6000; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().instructionsExecuted(), static_cast<gba::u64>(6000));
+  EXPECT_TRUE(emulator.cpu().thumb());
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -337,6 +421,12 @@ int main() {
       {"Pokemon startup conditional loop completes", testPokemonStartupConditionalLoopCompletes},
       {"Pokemon startup helper returns", testPokemonStartupHelperReturns},
       {"Pokemon startup halfword IO clear", testPokemonStartupHalfwordIoClear},
+      {"Pokemon startup multiple load/store", testPokemonStartupMultipleLoadStore},
+      {"Pokemon startup immediate shift", testPokemonStartupImmediateShift},
+      {"Pokemon startup unconditional branch", testPokemonStartupUnconditionalBranch},
+      {"Pokemon startup stack adjust", testPokemonStartupStackAdjust},
+      {"Pokemon startup SP-relative store", testPokemonStartupSpRelativeStore},
+      {"Pokemon startup runs 6000 instructions", testPokemonStartupRunsSixThousandInstructions},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };

@@ -288,11 +288,31 @@ u32 Cpu::stepThumb(Bus& bus) {
     return 1 + count;
   }
 
-  if ((instruction & 0xf800u) == 0x0000u) {
+  if ((instruction & 0xff00u) == 0xb000u) {
+    const u32 offset = (instruction & 0x7fu) << 2;
+    if ((instruction & 0x0080u) != 0) {
+      regs_[13] -= offset;
+    } else {
+      regs_[13] += offset;
+    }
+    return 1;
+  }
+
+  if ((instruction & 0xe000u) == 0x0000u && ((instruction >> 11) & 0x03) != 0x03) {
+    const u32 op = (instruction >> 11) & 0x03;
     const u32 offset = (instruction >> 6) & 0x1f;
     const int rs = static_cast<int>((instruction >> 3) & 0x07);
     const int rd = static_cast<int>(instruction & 0x07);
-    regs_[rd] = regs_[rs] << offset;
+    const u32 value = regs_[rs];
+
+    if (op == 0x0) {
+      regs_[rd] = value << offset;
+    } else if (op == 0x1) {
+      regs_[rd] = offset == 0 ? 0 : value >> offset;
+    } else {
+      regs_[rd] = offset == 0 ? (value & 0x80000000u ? 0xffffffffu : 0) : static_cast<u32>(static_cast<int32_t>(value) >> offset);
+    }
+    setNz(cpsr_, regs_[rd]);
     return 1;
   }
 
@@ -345,6 +365,18 @@ u32 Cpu::stepThumb(Bus& bus) {
     const u32 offset = (instruction & 0xffu) << 2;
     regs_[rd] = bus.read32(((pc + 4) & ~3u) + offset);
     return 3;
+  }
+
+  if ((instruction & 0xf000u) == 0x9000u) {
+    const bool load = (instruction & (1u << 11)) != 0;
+    const int rd = static_cast<int>((instruction >> 8) & 0x07);
+    const u32 address = regs_[13] + ((instruction & 0xffu) << 2);
+    if (load) {
+      regs_[rd] = bus.read32(address);
+    } else {
+      bus.write32(address, regs_[rd]);
+    }
+    return 2;
   }
 
   if ((instruction & 0xe000u) == 0x6000u) {
@@ -465,6 +497,40 @@ u32 Cpu::stepThumb(Bus& bus) {
     return 3;
   }
 
+  if ((instruction & 0xf000u) == 0xc000u) {
+    const bool load = (instruction & (1u << 11)) != 0;
+    const int rb = static_cast<int>((instruction >> 8) & 0x07);
+    const u16 list = instruction & 0xffu;
+    u32 address = regs_[rb];
+    u32 count = 0;
+
+    for (int reg = 0; reg < 8; ++reg) {
+      if ((list & (1u << reg)) == 0) {
+        continue;
+      }
+      if (load) {
+        regs_[reg] = bus.read32(address);
+      } else {
+        bus.write32(address, regs_[reg]);
+      }
+      address += 4;
+      ++count;
+    }
+
+    if (count == 0) {
+      if (load) {
+        regs_[15] = bus.read32(address) & ~1u;
+      } else {
+        bus.write32(address, regs_[15] + 2);
+      }
+      address += 0x40;
+      count = 16;
+    }
+
+    regs_[rb] += count * 4;
+    return 1 + count;
+  }
+
   if ((instruction & 0xf000u) == 0xd000u && (instruction & 0x0f00u) != 0x0f00u) {
     const u32 condition = (instruction >> 8) & 0x0f;
     if (conditionPassed(condition << 28, cpsr_)) {
@@ -491,6 +557,15 @@ u32 Cpu::stepThumb(Bus& bus) {
     const u32 target = regs_[14] + ((instruction & 0x07ffu) << 1);
     regs_[14] = (pc + 2) | 1u;
     regs_[15] = target;
+    return 3;
+  }
+
+  if ((instruction & 0xf800u) == 0xe000u) {
+    u32 offset = (instruction & 0x07ffu) << 1;
+    if ((offset & 0x0800u) != 0) {
+      offset |= 0xfffff000u;
+    }
+    regs_[15] = pc + 4 + offset;
     return 3;
   }
 
