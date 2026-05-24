@@ -262,6 +262,32 @@ u32 Cpu::stepThumb(Bus& bus) {
   if ((instruction & 0xf800u) == 0x2000u) {
     const int rd = static_cast<int>((instruction >> 8) & 0x07);
     regs_[rd] = instruction & 0xffu;
+    setNz(cpsr_, regs_[rd]);
+    return 1;
+  }
+
+  if ((instruction & 0xe000u) == 0x2000u) {
+    const u32 op = (instruction >> 11) & 0x03;
+    const int rd = static_cast<int>((instruction >> 8) & 0x07);
+    const u32 imm = instruction & 0xffu;
+
+    if (op == 0x1) {
+      setNz(cpsr_, regs_[rd] - imm);
+      return 1;
+    }
+    if (op == 0x2) {
+      regs_[rd] += imm;
+      setNz(cpsr_, regs_[rd]);
+      return 1;
+    }
+    if (op == 0x3) {
+      regs_[rd] -= imm;
+      setNz(cpsr_, regs_[rd]);
+      return 1;
+    }
+
+    regs_[rd] = imm;
+    setNz(cpsr_, regs_[rd]);
     return 1;
   }
 
