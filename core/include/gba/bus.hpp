@@ -44,6 +44,8 @@ class Bus {
   [[nodiscard]] u16 readIo16(u32 address);
   void writeIo8(u32 address, u8 value);
   void writeIo16(u32 address, u16 value);
+  void runDma(int channel);
+  [[nodiscard]] u32 dmaAddressStep(u16 control, bool source, bool word_transfer) const;
 
   Cartridge& cartridge_;
   Ppu& ppu_;
@@ -57,6 +59,10 @@ class Bus {
   std::array<u8, 1024> palette_{};
   std::array<u8, 96 * 1024> vram_{};
   std::array<u8, 1024> oam_{};
+  std::array<u32, 4> dma_source_{};
+  std::array<u32, 4> dma_dest_{};
+  std::array<u16, 4> dma_count_{};
+  std::array<u16, 4> dma_control_{};
 };
 
 }  // namespace gba

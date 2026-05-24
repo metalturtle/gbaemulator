@@ -166,6 +166,12 @@ u32 Cpu::stepArm(Bus& bus) {
     return 3;
   }
 
+  if ((instruction & 0x0fbf0fffu) == 0x010f0000u) {
+    const int rd = static_cast<int>((instruction >> 12) & 0x0f);
+    regs_[rd] = cpsr_;
+    return 1;
+  }
+
   if ((instruction & 0x0fbffff0u) == 0x0129f000u) {
     const int rm = static_cast<int>(instruction & 0x0f);
     cpsr_ = (cpsr_ & ~0xffu) | (regs_.at(rm) & 0xffu);
@@ -182,7 +188,7 @@ u32 Cpu::stepArm(Bus& bus) {
     const int rn = static_cast<int>((instruction >> 16) & 0x0f);
     const int rd = static_cast<int>((instruction >> 12) & 0x0f);
 
-    if (!immediate_offset || byte_transfer) {
+    if (!immediate_offset) {
       return 1;
     }
 
@@ -191,7 +197,9 @@ u32 Cpu::stepArm(Bus& bus) {
     const u32 effective = pre_index ? (add_offset ? base + offset : base - offset) : base;
 
     if (load) {
-      regs_.at(rd) = bus.read32(effective);
+      regs_.at(rd) = byte_transfer ? bus.read8(effective) : bus.read32(effective);
+    } else if (byte_transfer) {
+      bus.write8(effective, static_cast<u8>(readRegisterForOperand(regs_, rd, pc)));
     } else {
       const u32 value = readRegisterForOperand(regs_, rd, pc);
       bus.write32(effective, value);
@@ -203,32 +211,172 @@ u32 Cpu::stepArm(Bus& bus) {
     return 3;
   }
 
+  if ((instruction & 0x0e000090u) == 0x00000090u) {
+    const bool pre_index = (instruction & (1u << 24)) != 0;
+    const bool add_offset = (instruction & (1u << 23)) != 0;
+    const bool immediate_offset = (instruction & (1u << 22)) != 0;
+    const bool write_back = (instruction & (1u << 21)) != 0;
+    const bool load = (instruction & (1u << 20)) != 0;
+    const int rn = static_cast<int>((instruction >> 16) & 0x0f);
+    const int rd = static_cast<int>((instruction >> 12) & 0x0f);
+    const bool signed_transfer = (instruction & (1u << 6)) != 0;
+    const bool halfword_transfer = (instruction & (1u << 5)) != 0;
+
+    if (!immediate_offset || signed_transfer || !halfword_transfer) {
+      ++unimplemented_instructions_;
+      return 1;
+    }
+
+    const u32 offset = ((instruction >> 4) & 0xf0u) | (instruction & 0x0fu);
+    const u32 base = readRegisterForOperand(regs_, rn, pc);
+    const u32 effective = pre_index ? (add_offset ? base + offset : base - offset) : base;
+
+    if (load) {
+      regs_[rd] = bus.read16(effective);
+    } else {
+      bus.write16(effective, static_cast<u16>(readRegisterForOperand(regs_, rd, pc)));
+    }
+
+    if (write_back || !pre_index) {
+      regs_[rn] = add_offset ? base + offset : base - offset;
+    }
+    return 3;
+  }
+
+  if ((instruction & 0x0e000000u) == 0x08000000u) {
+    const bool pre_index = (instruction & (1u << 24)) != 0;
+    const bool add_offset = (instruction & (1u << 23)) != 0;
+    const bool write_back = (instruction & (1u << 21)) != 0;
+    const bool load = (instruction & (1u << 20)) != 0;
+    const int rn = static_cast<int>((instruction >> 16) & 0x0f);
+    const u32 list = instruction & 0xffffu;
+    u32 count = 0;
+    for (int reg = 0; reg < 16; ++reg) {
+      if ((list & (1u << reg)) != 0) {
+        ++count;
+      }
+    }
+    if (count == 0) {
+      count = 16;
+    }
+
+    const u32 base = readRegisterForOperand(regs_, rn, pc);
+    u32 address = base;
+    if (add_offset) {
+      address = pre_index ? base + 4 : base;
+    } else {
+      address = pre_index ? base - count * 4 : base - count * 4 + 4;
+    }
+
+    for (int reg = 0; reg < 16; ++reg) {
+      if ((list & (1u << reg)) == 0) {
+        continue;
+      }
+      if (load) {
+        regs_[reg] = bus.read32(address);
+      } else {
+        bus.write32(address, readRegisterForOperand(regs_, reg, pc));
+      }
+      address += 4;
+    }
+
+    if (write_back) {
+      regs_[rn] = add_offset ? base + count * 4 : base - count * 4;
+    }
+    if (load && (list & (1u << 15)) != 0) {
+      regs_[15] &= ~3u;
+    }
+    return 1 + count;
+  }
+
   if ((instruction & 0x0c000000u) == 0x00000000u) {
     const bool immediate = (instruction & (1u << 25)) != 0;
     const u32 opcode = (instruction >> 21) & 0x0f;
+    const bool set_flags = (instruction & (1u << 20)) != 0;
     const int rn = static_cast<int>((instruction >> 16) & 0x0f);
     const int rd = static_cast<int>((instruction >> 12) & 0x0f);
+    u32 operand2 = 0;
 
     if (immediate) {
       const u32 rotate = ((instruction >> 8) & 0x0f) * 2;
       const u32 imm8 = instruction & 0xffu;
-      const u32 operand2 = rotate == 0 ? imm8 : ((imm8 >> rotate) | (imm8 << (32 - rotate)));
-
-      if (opcode == 0x4) {
-        regs_.at(rd) = readRegisterForOperand(regs_, rn, pc) + operand2;
-        return 1;
-      }
-      if (opcode == 0xd) {
-        regs_.at(rd) = operand2;
-        return 1;
-      }
+      operand2 = rotate == 0 ? imm8 : ((imm8 >> rotate) | (imm8 << (32 - rotate)));
     } else {
       const int rm = static_cast<int>(instruction & 0x0f);
-      const bool no_shift = (instruction & 0x00000ff0u) == 0;
-      if (opcode == 0xd && no_shift) {
-        regs_.at(rd) = readRegisterForOperand(regs_, rm, pc);
-        return 1;
+      const bool register_shift = (instruction & (1u << 4)) != 0;
+
+      const u32 value = readRegisterForOperand(regs_, rm, pc);
+      const u32 shift = register_shift ? (regs_[(instruction >> 8) & 0x0f] & 0xffu) : ((instruction >> 7) & 0x1fu);
+      const u32 shift_type = (instruction >> 5) & 0x3u;
+      switch (shift_type) {
+        case 0:
+          operand2 = shift >= 32 ? 0 : value << shift;
+          break;
+        case 1:
+          operand2 = shift == 0 ? value : (shift >= 32 ? 0 : value >> shift);
+          break;
+        case 2:
+          operand2 = shift == 0 ? value : (shift >= 32 ? (value & 0x80000000u ? 0xffffffffu : 0) : static_cast<u32>(static_cast<int32_t>(value) >> shift));
+          break;
+        default:
+          operand2 = shift == 0 ? value : ((value >> (shift & 31u)) | (value << ((32 - shift) & 31u)));
+          break;
       }
+    }
+
+    const u32 lhs = readRegisterForOperand(regs_, rn, pc);
+    u32 result = 0;
+    switch (opcode) {
+      case 0x0:
+        result = lhs & operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setNz(cpsr_, result);
+        }
+        return 1;
+      case 0x1:
+        result = lhs ^ operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setNz(cpsr_, result);
+        }
+        return 1;
+      case 0x2:
+        result = lhs - operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setSubFlags(cpsr_, lhs, operand2, result);
+        }
+        return 1;
+      case 0x4:
+        result = lhs + operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setAddFlags(cpsr_, lhs, operand2, result);
+        }
+        return 1;
+      case 0xc:
+        result = lhs | operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setNz(cpsr_, result);
+        }
+        return 1;
+      case 0xd:
+        regs_[rd] = operand2;
+        if (set_flags) {
+          setNz(cpsr_, operand2);
+        }
+        return 1;
+      case 0xe:
+        result = lhs & ~operand2;
+        regs_[rd] = result;
+        if (set_flags) {
+          setNz(cpsr_, result);
+        }
+        return 1;
+      default:
+        break;
     }
   }
 

@@ -394,6 +394,124 @@ void testPokemonIrqDispatchesThroughBiosHleVector() {
   EXPECT_EQ(static_cast<u32>(emulator.cpu().mode()), static_cast<u32>(gba::CpuMode::Irq));
 }
 
+void testPokemonDmaCopiesIrqHandlerToIwram() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.bus().read32(0x03007ffc), static_cast<u32>(0x03002750));
+  EXPECT_EQ(emulator.bus().read32(0x03002750), static_cast<u32>(0xe3a03301));
+  EXPECT_EQ(emulator.bus().read32(0x03002754), static_cast<u32>(0xe2833c02));
+}
+
+void testPokemonIrqHandlerLoadsImeWithArmHalfwordTransfer() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  emulator.bus().write16(0x04000208, 1);
+  emulator.cpu().requestIrq();
+  for (int i = 0; i < 5 && emulator.cpu().reg(15) != 0x03002760; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x03002760));
+  EXPECT_EQ(emulator.cpu().reg(1), static_cast<u32>(1));
+}
+
+void testPokemonIrqHandlerReadsCpsrWithArmMrs() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  emulator.bus().write16(0x04000208, 1);
+  emulator.cpu().requestIrq();
+  for (int i = 0; i < 6 && emulator.cpu().reg(15) != 0x03002764; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x03002764));
+  EXPECT_EQ(emulator.cpu().reg(0), emulator.cpu().cpsr());
+}
+
+void testPokemonIrqHandlerStoresRegistersWithArmBlockTransfer() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  emulator.bus().write16(0x04000208, 1);
+  emulator.cpu().requestIrq();
+  for (int i = 0; i < 7 && emulator.cpu().reg(15) != 0x03002768; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x03002768));
+  EXPECT_EQ(emulator.cpu().reg(13), static_cast<u32>(0x03007e08));
+  EXPECT_EQ(emulator.bus().read32(0x03007e08), static_cast<u32>(0x92));
+}
+
+void testPokemonIrqHandlerMasksInterruptFlagsWithArmShiftedAnd() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  emulator.bus().write16(0x04000208, 1);
+  emulator.cpu().requestIrq();
+  for (int i = 0; i < 10 && emulator.cpu().reg(15) != 0x03002774; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x03002774));
+  EXPECT_EQ(emulator.cpu().reg(1), static_cast<u32>(0));
+}
+
+void testPokemonIrqHandlerUsesArmByteLoadAndRegisterShift() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1400 && emulator.bus().read32(0x03007ffc) != 0x03002750; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  emulator.bus().write16(0x04000200, gba::Interrupts::VBlank);
+  emulator.bus().write16(0x04000208, 1);
+  emulator.interrupts().request(gba::Interrupts::VBlank);
+  emulator.cpu().requestIrq();
+  for (int i = 0; i < 40 && emulator.cpu().reg(15) != 0x03002844; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x03002844));
+  EXPECT_EQ(emulator.cpu().reg(0), static_cast<u32>(8));
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -447,6 +565,12 @@ int main() {
       {"Pokemon startup SP-relative store", testPokemonStartupSpRelativeStore},
       {"Pokemon startup runs 6000 instructions", testPokemonStartupRunsSixThousandInstructions},
       {"Pokemon IRQ dispatches through BIOS HLE vector", testPokemonIrqDispatchesThroughBiosHleVector},
+      {"Pokemon DMA copies IRQ handler to IWRAM", testPokemonDmaCopiesIrqHandlerToIwram},
+      {"Pokemon IRQ handler loads IME with ARM halfword transfer", testPokemonIrqHandlerLoadsImeWithArmHalfwordTransfer},
+      {"Pokemon IRQ handler reads CPSR with ARM MRS", testPokemonIrqHandlerReadsCpsrWithArmMrs},
+      {"Pokemon IRQ handler stores registers with ARM block transfer", testPokemonIrqHandlerStoresRegistersWithArmBlockTransfer},
+      {"Pokemon IRQ handler masks interrupt flags with ARM shifted AND", testPokemonIrqHandlerMasksInterruptFlagsWithArmShiftedAnd},
+      {"Pokemon IRQ handler uses ARM byte load and register shift", testPokemonIrqHandlerUsesArmByteLoadAndRegisterShift},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };

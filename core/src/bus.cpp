@@ -14,6 +14,10 @@ void Bus::reset() {
   std::fill(palette_.begin(), palette_.end(), 0);
   std::fill(vram_.begin(), vram_.end(), 0);
   std::fill(oam_.begin(), oam_.end(), 0);
+  std::fill(dma_source_.begin(), dma_source_.end(), 0);
+  std::fill(dma_dest_.begin(), dma_dest_.end(), 0);
+  std::fill(dma_count_.begin(), dma_count_.end(), 0);
+  std::fill(dma_control_.begin(), dma_control_.end(), 0);
 }
 
 u8 Bus::read8(u32 address) {
@@ -159,6 +163,36 @@ u16 Bus::readIo16(u32 address) {
       return timers_.readControl(static_cast<int>(((address & 0x000c) >> 2)));
     case 0x0130:
       return keypad_.keyInput();
+    case 0x00b0:
+    case 0x00bc:
+    case 0x00c8:
+    case 0x00d4:
+      return static_cast<u16>(dma_source_[static_cast<int>((address - 0x040000b0u) / 12)] & 0xffff);
+    case 0x00b2:
+    case 0x00be:
+    case 0x00ca:
+    case 0x00d6:
+      return static_cast<u16>(dma_source_[static_cast<int>((address - 0x040000b0u) / 12)] >> 16);
+    case 0x00b4:
+    case 0x00c0:
+    case 0x00cc:
+    case 0x00d8:
+      return static_cast<u16>(dma_dest_[static_cast<int>((address - 0x040000b0u) / 12)] & 0xffff);
+    case 0x00b6:
+    case 0x00c2:
+    case 0x00ce:
+    case 0x00da:
+      return static_cast<u16>(dma_dest_[static_cast<int>((address - 0x040000b0u) / 12)] >> 16);
+    case 0x00b8:
+    case 0x00c4:
+    case 0x00d0:
+    case 0x00dc:
+      return dma_count_[static_cast<int>((address - 0x040000b0u) / 12)];
+    case 0x00ba:
+    case 0x00c6:
+    case 0x00d2:
+    case 0x00de:
+      return dma_control_[static_cast<int>((address - 0x040000b0u) / 12)];
     case 0x0200:
       return interrupts_.ie();
     case 0x0202:
@@ -201,6 +235,59 @@ void Bus::writeIo16(u32 address, u16 value) {
     case 0x010e:
       timers_.writeControl(static_cast<int>(((address & 0x000c) >> 2)), value);
       break;
+    case 0x00b0:
+    case 0x00bc:
+    case 0x00c8:
+    case 0x00d4: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_source_[channel] = (dma_source_[channel] & 0xffff0000u) | value;
+      break;
+    }
+    case 0x00b2:
+    case 0x00be:
+    case 0x00ca:
+    case 0x00d6: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_source_[channel] = (dma_source_[channel] & 0x0000ffffu) | (static_cast<u32>(value) << 16);
+      break;
+    }
+    case 0x00b4:
+    case 0x00c0:
+    case 0x00cc:
+    case 0x00d8: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_dest_[channel] = (dma_dest_[channel] & 0xffff0000u) | value;
+      break;
+    }
+    case 0x00b6:
+    case 0x00c2:
+    case 0x00ce:
+    case 0x00da: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_dest_[channel] = (dma_dest_[channel] & 0x0000ffffu) | (static_cast<u32>(value) << 16);
+      break;
+    }
+    case 0x00b8:
+    case 0x00c4:
+    case 0x00d0:
+    case 0x00dc: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_count_[channel] = value;
+      break;
+    }
+    case 0x00ba:
+    case 0x00c6:
+    case 0x00d2:
+    case 0x00de: {
+      const int channel = static_cast<int>(((address & 0x00fc) - 0x00b0) / 12);
+      dma_control_[channel] = value;
+      const bool enabled = (value & 0x8000u) != 0;
+      const bool immediate = (value & 0x3000u) == 0;
+      if (enabled && immediate) {
+        runDma(channel);
+      }
+      break;
+    }
     case 0x0200:
       interrupts_.setIe(value);
       break;
@@ -212,6 +299,53 @@ void Bus::writeIo16(u32 address, u16 value) {
       break;
     default:
       break;
+  }
+}
+
+u32 Bus::dmaAddressStep(u16 control, bool source, bool word_transfer) const {
+  const u32 mode = source ? ((control >> 7) & 0x3u) : ((control >> 5) & 0x3u);
+  const u32 amount = word_transfer ? 4u : 2u;
+  switch (mode) {
+    case 0:
+      return amount;
+    case 1:
+      return static_cast<u32>(0 - amount);
+    case 2:
+      return 0;
+    case 3:
+      return source ? amount : 0;
+    default:
+      return amount;
+  }
+}
+
+void Bus::runDma(int channel) {
+  const u16 control = dma_control_[channel];
+  const bool word_transfer = (control & 0x0400u) != 0;
+  u32 count = dma_count_[channel];
+  if (count == 0) {
+    count = channel == 3 ? 0x10000u : 0x4000u;
+  }
+
+  u32 source = dma_source_[channel];
+  u32 dest = dma_dest_[channel];
+  const u32 source_step = dmaAddressStep(control, true, word_transfer);
+  const u32 dest_step = dmaAddressStep(control, false, word_transfer);
+
+  for (u32 i = 0; i < count; ++i) {
+    if (word_transfer) {
+      write32(dest, read32(source));
+    } else {
+      write16(dest, read16(source));
+    }
+    source += source_step;
+    dest += dest_step;
+  }
+
+  dma_source_[channel] = source;
+  dma_dest_[channel] = dest;
+  if ((control & 0x0200u) == 0) {
+    dma_control_[channel] &= static_cast<u16>(~0x8000u);
   }
 }
 

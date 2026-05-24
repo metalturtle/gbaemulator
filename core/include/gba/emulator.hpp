@@ -32,6 +32,7 @@ class Emulator {
   [[nodiscard]] Cpu& cpu() { return cpu_; }
   [[nodiscard]] const Ppu& ppu() const { return ppu_; }
   [[nodiscard]] const Interrupts& interrupts() const { return interrupts_; }
+  [[nodiscard]] Interrupts& interrupts() { return interrupts_; }
   [[nodiscard]] const Keypad& keypad() const { return keypad_; }
   [[nodiscard]] const Scheduler& scheduler() const { return scheduler_; }
   [[nodiscard]] Bus& bus() { return bus_; }
