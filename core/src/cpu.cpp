@@ -64,6 +64,16 @@ u32 signExtendBranchOffset(u32 instruction) {
   return offset;
 }
 
+void setNz(u32& cpsr, u32 value) {
+  cpsr &= ~((1u << 31) | (1u << 30));
+  if ((value & (1u << 31)) != 0) {
+    cpsr |= 1u << 31;
+  }
+  if (value == 0) {
+    cpsr |= 1u << 30;
+  }
+}
+
 }  // namespace
 
 void Cpu::reset() {
@@ -299,6 +309,79 @@ u32 Cpu::stepThumb(Bus& bus) {
       }
       regs_[15] = target & ~1u;
       return 3;
+    }
+  }
+
+  if ((instruction & 0xfc00u) == 0x4000u) {
+    const u32 op = (instruction >> 6) & 0x0f;
+    const int rs = static_cast<int>((instruction >> 3) & 0x07);
+    const int rd = static_cast<int>(instruction & 0x07);
+    const u32 lhs = regs_[rd];
+    const u32 rhs = regs_[rs];
+    u32 result = lhs;
+
+    switch (op) {
+      case 0x0:
+        result = lhs & rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0x1:
+        result = lhs ^ rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0x2:
+        result = rhs >= 32 ? 0 : lhs << rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0x3:
+        result = rhs >= 32 ? 0 : lhs >> rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0x4:
+        result = rhs >= 32 ? (lhs & 0x80000000u ? 0xffffffffu : 0) : static_cast<u32>(static_cast<int32_t>(lhs) >> rhs);
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0x8:
+        setNz(cpsr_, lhs & rhs);
+        return 1;
+      case 0x9:
+        result = 0 - rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0xa:
+        setNz(cpsr_, lhs - rhs);
+        return 1;
+      case 0xb:
+        setNz(cpsr_, lhs + rhs);
+        return 1;
+      case 0xc:
+        result = lhs | rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0xd:
+        result = lhs * rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0xe:
+        result = lhs & ~rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      case 0xf:
+        result = ~rhs;
+        regs_[rd] = result;
+        setNz(cpsr_, result);
+        return 1;
+      default:
+        break;
     }
   }
 
