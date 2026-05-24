@@ -32,6 +32,7 @@ class Cpu {
   [[nodiscard]] u64 unimplementedInstructions() const { return unimplemented_instructions_; }
   [[nodiscard]] u32 lastPc() const { return last_pc_; }
   [[nodiscard]] u32 lastInstruction() const { return last_instruction_; }
+  [[nodiscard]] u32 lastSwi() const { return last_swi_; }
 
  private:
   static constexpr u32 kThumbBit = 1u << 5;
@@ -48,6 +49,7 @@ class Cpu {
   u64 unimplemented_instructions_ = 0;
   u32 last_pc_ = 0;
   u32 last_instruction_ = 0;
+  u32 last_swi_ = 0xffffffffu;
 };
 
 }  // namespace gba

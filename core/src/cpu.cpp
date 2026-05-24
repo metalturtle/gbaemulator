@@ -75,6 +75,7 @@ void Cpu::reset() {
   unimplemented_instructions_ = 0;
   last_pc_ = 0;
   last_instruction_ = 0;
+  last_swi_ = 0xffffffffu;
 }
 
 u32 Cpu::step(Bus& bus) {
@@ -247,6 +248,21 @@ u32 Cpu::stepThumb(Bus& bus) {
       }
       return 1;
     }
+    if (op == 0x3) {
+      const u32 target = regs_[source];
+      if ((target & 1u) != 0) {
+        cpsr_ |= kThumbBit;
+      } else {
+        cpsr_ &= ~kThumbBit;
+      }
+      regs_[15] = target & ~1u;
+      return 3;
+    }
+  }
+
+  if ((instruction & 0xff00u) == 0xdf00u) {
+    last_swi_ = instruction & 0xffu;
+    return 3;
   }
 
   if ((instruction & 0xf800u) == 0xf000u) {
