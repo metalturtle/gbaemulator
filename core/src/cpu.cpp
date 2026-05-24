@@ -263,6 +263,31 @@ u32 Cpu::stepThumb(Bus& bus) {
     return 1 + count;
   }
 
+  if ((instruction & 0xfe00u) == 0xbc00u) {
+    const bool include_pc = (instruction & (1u << 8)) != 0;
+    const u16 list = instruction & 0xffu;
+    u32 count = include_pc ? 1 : 0;
+    for (int reg = 0; reg < 8; ++reg) {
+      if ((list & (1u << reg)) != 0) {
+        ++count;
+      }
+    }
+
+    u32 address = regs_[13];
+    for (int reg = 0; reg < 8; ++reg) {
+      if ((list & (1u << reg)) != 0) {
+        regs_[reg] = bus.read32(address);
+        address += 4;
+      }
+    }
+    if (include_pc) {
+      regs_[15] = bus.read32(address) & ~1u;
+      address += 4;
+    }
+    regs_[13] += count * 4;
+    return 1 + count;
+  }
+
   if ((instruction & 0xf800u) == 0x0000u) {
     const u32 offset = (instruction >> 6) & 0x1f;
     const int rs = static_cast<int>((instruction >> 3) & 0x07);

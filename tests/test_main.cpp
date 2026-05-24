@@ -262,6 +262,21 @@ void testPokemonStartupConditionalLoopCompletes() {
   EXPECT_EQ(emulator.bus().read8(0x030008d7), static_cast<u8>(0xff));
 }
 
+void testPokemonStartupHelperReturns() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 1100 && emulator.cpu().reg(15) != 0x080003be; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x080003be));
+  EXPECT_EQ(emulator.cpu().reg(13), static_cast<u32>(0x03007e28));
+  EXPECT_TRUE(emulator.cpu().thumb());
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -306,6 +321,7 @@ int main() {
       {"Pokemon startup Thumb ALU ORs byte", testPokemonStartupThumbAluOrsByte},
       {"Pokemon startup Thumb immediate increment", testPokemonStartupThumbImmediateIncrement},
       {"Pokemon startup conditional loop completes", testPokemonStartupConditionalLoopCompletes},
+      {"Pokemon startup helper returns", testPokemonStartupHelperReturns},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };
