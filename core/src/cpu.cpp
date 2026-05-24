@@ -72,6 +72,9 @@ void Cpu::reset() {
   cpsr_ = static_cast<u32>(CpuMode::System) | kIrqDisableBit;
   irq_line_ = false;
   instructions_executed_ = 0;
+  unimplemented_instructions_ = 0;
+  last_pc_ = 0;
+  last_instruction_ = 0;
 }
 
 u32 Cpu::step(Bus& bus) {
@@ -97,6 +100,8 @@ void Cpu::enterIrq() {
 u32 Cpu::stepArm(Bus& bus) {
   const u32 pc = regs_[15];
   const u32 instruction = bus.read32(pc);
+  last_pc_ = pc;
+  last_instruction_ = instruction;
   regs_[15] = pc + 4;
 
   if (!conditionPassed(instruction, cpsr_)) {
@@ -190,13 +195,77 @@ u32 Cpu::stepArm(Bus& bus) {
     }
   }
 
+  ++unimplemented_instructions_;
   return 1;
 }
 
 u32 Cpu::stepThumb(Bus& bus) {
   const u32 pc = regs_[15];
-  (void)bus.read16(pc);
+  const u16 instruction = bus.read16(pc);
+  last_pc_ = pc;
+  last_instruction_ = instruction;
   regs_[15] = pc + 2;
+
+  if ((instruction & 0xfe00u) == 0xb400u) {
+    const bool include_lr = (instruction & (1u << 8)) != 0;
+    const u16 list = instruction & 0xffu;
+    u32 count = include_lr ? 1 : 0;
+    for (int reg = 0; reg < 8; ++reg) {
+      if ((list & (1u << reg)) != 0) {
+        ++count;
+      }
+    }
+
+    u32 address = regs_[13] - count * 4;
+    regs_[13] = address;
+    for (int reg = 0; reg < 8; ++reg) {
+      if ((list & (1u << reg)) != 0) {
+        bus.write32(address, regs_[reg]);
+        address += 4;
+      }
+    }
+    if (include_lr) {
+      bus.write32(address, regs_[14]);
+    }
+    return 1 + count;
+  }
+
+  if ((instruction & 0xff00u) == 0x2000u) {
+    const int rd = static_cast<int>((instruction >> 8) & 0x07);
+    regs_[rd] = instruction & 0xffu;
+    return 1;
+  }
+
+  if ((instruction & 0xfc00u) == 0x4400u) {
+    const u32 op = (instruction >> 8) & 0x03;
+    const int source = static_cast<int>(((instruction >> 3) & 0x07) | ((instruction & 0x0040u) != 0 ? 8 : 0));
+    const int dest = static_cast<int>((instruction & 0x07) | ((instruction & 0x0080u) != 0 ? 8 : 0));
+    if (op == 0x2) {
+      regs_[dest] = readRegisterForOperand(regs_, source, pc);
+      if (dest == 15) {
+        regs_[15] &= ~1u;
+      }
+      return 1;
+    }
+  }
+
+  if ((instruction & 0xf800u) == 0xf000u) {
+    u32 offset = instruction & 0x07ffu;
+    if ((offset & 0x0400u) != 0) {
+      offset |= 0xfffff800u;
+    }
+    regs_[14] = (pc + 4) + (offset << 12);
+    return 1;
+  }
+
+  if ((instruction & 0xf800u) == 0xf800u) {
+    const u32 target = regs_[14] + ((instruction & 0x07ffu) << 1);
+    regs_[14] = (pc + 2) | 1u;
+    regs_[15] = target;
+    return 3;
+  }
+
+  ++unimplemented_instructions_;
   return 1;
 }
 

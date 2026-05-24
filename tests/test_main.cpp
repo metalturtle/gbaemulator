@@ -148,6 +148,27 @@ void testPokemonStartupReachesThumbEntry() {
   EXPECT_EQ(emulator.bus().read32(0x03007ffc), static_cast<u32>(0x08000248));
 }
 
+void testPokemonFirstThumbCall() {
+  const auto rom = loadFile("pokemonemerald.gba");
+  gba::Emulator emulator;
+  EXPECT_TRUE(emulator.loadRom(rom));
+
+  for (int i = 0; i < 32 && !emulator.cpu().thumb(); ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  for (int i = 0; i < 6; ++i) {
+    emulator.cpu().step(emulator.bus());
+  }
+
+  EXPECT_EQ(emulator.cpu().unimplementedInstructions(), static_cast<gba::u64>(0));
+  EXPECT_EQ(emulator.cpu().reg(0), static_cast<u32>(0xff));
+  EXPECT_EQ(emulator.cpu().reg(13), static_cast<u32>(0x03007e28));
+  EXPECT_EQ(emulator.cpu().reg(14), static_cast<u32>(0x080003b1));
+  EXPECT_EQ(emulator.cpu().reg(15), static_cast<u32>(0x082e70a8));
+}
+
 void testKeypadActiveLow() {
   gba::Emulator emulator;
   EXPECT_EQ(emulator.keypad().keyInput(), static_cast<u16>(0x03ff));
@@ -185,6 +206,7 @@ int main() {
       {"ARM branch execution", testArmBranchExecution},
       {"Pokemon entry branch", testPokemonEntryBranch},
       {"Pokemon startup reaches Thumb entry", testPokemonStartupReachesThumbEntry},
+      {"Pokemon first Thumb call", testPokemonFirstThumbCall},
       {"keypad active-low", testKeypadActiveLow},
       {"pokemon emerald smoke load", testPokemonEmeraldSmokeLoad},
   };

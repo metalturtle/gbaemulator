@@ -29,6 +29,9 @@ class Cpu {
   [[nodiscard]] bool thumb() const { return (cpsr_ & kThumbBit) != 0; }
   [[nodiscard]] CpuMode mode() const { return static_cast<CpuMode>(cpsr_ & 0x1f); }
   [[nodiscard]] u64 instructionsExecuted() const { return instructions_executed_; }
+  [[nodiscard]] u64 unimplementedInstructions() const { return unimplemented_instructions_; }
+  [[nodiscard]] u32 lastPc() const { return last_pc_; }
+  [[nodiscard]] u32 lastInstruction() const { return last_instruction_; }
 
  private:
   static constexpr u32 kThumbBit = 1u << 5;
@@ -42,6 +45,9 @@ class Cpu {
   u32 cpsr_ = 0;
   bool irq_line_ = false;
   u64 instructions_executed_ = 0;
+  u64 unimplemented_instructions_ = 0;
+  u32 last_pc_ = 0;
+  u32 last_instruction_ = 0;
 };
 
 }  // namespace gba
