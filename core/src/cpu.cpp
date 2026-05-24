@@ -231,10 +231,52 @@ u32 Cpu::stepThumb(Bus& bus) {
     return 1 + count;
   }
 
-  if ((instruction & 0xff00u) == 0x2000u) {
+  if ((instruction & 0xf800u) == 0x0000u) {
+    const u32 offset = (instruction >> 6) & 0x1f;
+    const int rs = static_cast<int>((instruction >> 3) & 0x07);
+    const int rd = static_cast<int>(instruction & 0x07);
+    regs_[rd] = regs_[rs] << offset;
+    return 1;
+  }
+
+  if ((instruction & 0xf800u) == 0x1800u) {
+    const bool subtract = (instruction & (1u << 9)) != 0;
+    const bool immediate = (instruction & (1u << 10)) != 0;
+    const u32 operand = immediate ? ((instruction >> 6) & 0x07) : regs_[(instruction >> 6) & 0x07];
+    const int rs = static_cast<int>((instruction >> 3) & 0x07);
+    const int rd = static_cast<int>(instruction & 0x07);
+    regs_[rd] = subtract ? regs_[rs] - operand : regs_[rs] + operand;
+    return 1;
+  }
+
+  if ((instruction & 0xf800u) == 0x2000u) {
     const int rd = static_cast<int>((instruction >> 8) & 0x07);
     regs_[rd] = instruction & 0xffu;
     return 1;
+  }
+
+  if ((instruction & 0xf800u) == 0x4800u) {
+    const int rd = static_cast<int>((instruction >> 8) & 0x07);
+    const u32 offset = (instruction & 0xffu) << 2;
+    regs_[rd] = bus.read32(((pc + 4) & ~3u) + offset);
+    return 3;
+  }
+
+  if ((instruction & 0xe000u) == 0x6000u) {
+    const bool byte = (instruction & (1u << 12)) != 0;
+    const bool load = (instruction & (1u << 11)) != 0;
+    const int rb = static_cast<int>((instruction >> 3) & 0x07);
+    const int rd = static_cast<int>(instruction & 0x07);
+    const u32 scale = byte ? 1u : 4u;
+    const u32 address = regs_[rb] + (((instruction >> 6) & 0x1fu) * scale);
+    if (load) {
+      regs_[rd] = byte ? bus.read8(address) : bus.read32(address);
+    } else if (byte) {
+      bus.write8(address, static_cast<u8>(regs_[rd]));
+    } else {
+      bus.write32(address, regs_[rd]);
+    }
+    return 2;
   }
 
   if ((instruction & 0xfc00u) == 0x4400u) {
@@ -279,6 +321,19 @@ u32 Cpu::stepThumb(Bus& bus) {
     regs_[14] = (pc + 2) | 1u;
     regs_[15] = target;
     return 3;
+  }
+
+  if ((instruction & 0xf200u) == 0x8000u) {
+    const bool load = (instruction & (1u << 11)) != 0;
+    const int rb = static_cast<int>((instruction >> 3) & 0x07);
+    const int rd = static_cast<int>(instruction & 0x07);
+    const u32 address = regs_[rb] + (((instruction >> 6) & 0x1fu) << 1);
+    if (load) {
+      regs_[rd] = bus.read16(address);
+    } else {
+      bus.write16(address, static_cast<u16>(regs_[rd]));
+    }
+    return 2;
   }
 
   ++unimplemented_instructions_;
