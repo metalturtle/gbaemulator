@@ -494,7 +494,7 @@ u32 Cpu::stepThumb(Bus& bus) {
     return 3;
   }
 
-  if ((instruction & 0xf200u) == 0x8000u) {
+  if ((instruction & 0xf000u) == 0x8000u) {
     const bool load = (instruction & (1u << 11)) != 0;
     const int rb = static_cast<int>((instruction >> 3) & 0x07);
     const int rd = static_cast<int>(instruction & 0x07);
